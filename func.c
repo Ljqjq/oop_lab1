@@ -4,8 +4,10 @@
 #include <string.h>
 #include "func.h"
 
+#define MAX_RATINGS 5
+
 // Функція для створення нового студента
-Student* createStudent(const char* surname, const char* name, const char* birthdate, float average_rating) {
+Student* createStudent(const char* surname, const char* name, const char* birthdate, float ratings[MAX_RATINGS]) {
     Student* newStudent = (Student*)malloc(sizeof(Student));
     if (!newStudent) {
         printf("Помилка виділення пам'яті!\n");
@@ -14,14 +16,14 @@ Student* createStudent(const char* surname, const char* name, const char* birthd
     strcpy(newStudent->surname, surname);
     strcpy(newStudent->name, name);
     strcpy(newStudent->birthdate, birthdate);
-    newStudent->average_rating = average_rating;
+    memcpy(newStudent->ratings, ratings, sizeof(float) * MAX_RATINGS);  // Копіюємо масив оцінок
     newStudent->next = NULL;
     return newStudent;
 }
 
 // Функція для додавання студента до списку
-void addStudent(Student** head, const char* surname, const char* name, const char* birthdate, float average_rating) {
-    Student* newStudent = createStudent(surname, name, birthdate, average_rating);
+void addStudent(Student** head, const char* surname, const char* name, const char* birthdate, float ratings[MAX_RATINGS]) {
+    Student* newStudent = createStudent(surname, name, birthdate, ratings);
     newStudent->next = *head;
     *head = newStudent;
 }
@@ -33,20 +35,23 @@ void printTable(Student* head) {
     printf("-----------------------------------------------------------------------------------\n");
     Student* current = head;
     while (current) {
-        printf("| %-15s | %-15s | %-15s | %-15.2f |\n",
-            current->surname, current->name, current->birthdate, current->average_rating);
+        float average_rating = 0.0;
+        for (int i = 0; i < MAX_RATINGS; i++) {
+            average_rating += current->ratings[i];
+        }
+        average_rating /= MAX_RATINGS;
+        printf("| %-15s | %-15s | %-15s | %-15.2f |\n", current->surname, current->name, current->birthdate, average_rating);
         current = current->next;
     }
     printf("-----------------------------------------------------------------------------------\n");
 }
 
+// Функція для сортування студентів за прізвищем
 void sortStudentsBySurname(Student** head) {
     if (*head == NULL || (*head)->next == NULL) return;
 
     int swapped;
     Student* current;
-    
-
     do {
         swapped = 0;
         current = *head;
@@ -75,35 +80,25 @@ void sortStudentsBySurname(Student** head) {
                 current = current->next;
             }
         }
-        
     } while (swapped);
 }
 
-// Функція для визначення двох студентів із найвищим середнім балом
-void findTopTwoStudents(Student* head) {
-    if (head == NULL || head->next == NULL) {
-        printf("Недостатньо даних для визначення топ-2 студентів.\n");
-        return;
-    }
-
-    Student* first = NULL;
-    Student* second = NULL;
-
+// Функція для обчислення середнього балу групи
+float calculateGroupAverage(Student* head) {
+    if (head == NULL) return 0.0;
+    float sum = 0.0;
+    int count = 0;
     Student* current = head;
-    while (current != NULL) {
-        if (first == NULL || current->average_rating > first->average_rating) {
-            second = first;
-            first = current;
+    while (current) {
+        float total = 0.0;
+        for (int i = 0; i < MAX_RATINGS; i++) {
+            total += current->ratings[i];
         }
-        else if (second == NULL || current->average_rating > second->average_rating) {
-            second = current;
-        }
+        sum += total / MAX_RATINGS;
+        count++;
         current = current->next;
     }
-
-    printf("\nДва студенти з найвищим середнім балом:\n");
-    printf("1. %s %s (Середній бал: %.2f)\n", first->surname, first->name, first->average_rating);
-    printf("2. %s %s (Середній бал: %.2f)\n", second->surname, second->name, second->average_rating);
+    return count > 0 ? sum / count : 0.0;
 }
 
 // Функція для завантаження даних із файлу
@@ -117,7 +112,7 @@ void loadStudentsFromFile(const char* filename, Student** head) {
     char line[256];
     while (fgets(line, sizeof(line), file)) {
         char surname[30], name[30], birthdate[15];
-        float ratings[50];
+        float ratings[MAX_RATINGS];
         int num_ratings = 0;
 
         char* token = strtok(line, ",");
@@ -130,38 +125,39 @@ void loadStudentsFromFile(const char* filename, Student** head) {
         strcpy(birthdate, token);
 
         token = strtok(NULL, " ");
-        while (token != NULL) {
+        while (token != NULL && num_ratings < MAX_RATINGS) {
             ratings[num_ratings++] = atof(token);
             token = strtok(NULL, " ");
         }
 
-        // Обчислення середнього рейтингу
-        float total = 0.0;
-        for (int i = 0; i < num_ratings; i++) {
-            total += ratings[i];
-        }
-        float average = total / num_ratings;
-
         // Додавання студента до списку
-        addStudent(head, surname, name, birthdate, average);
+        addStudent(head, surname, name, birthdate, ratings);
     }
 
     fclose(file);
 }
 
 void deleteBelowAverage(Student** head) {
-    float group_average = calculateGroupAverage(*head);
+    float group_average = calculateGroupAverage(*head);  // Get the group average
     Student* current = *head;
     Student* prev = NULL;
 
     while (current != NULL) {
-        if (current->average_rating < group_average) {
+        // Calculate the student's average rating
+        float student_average = 0.0;
+        for (int i = 0; i < MAX_RATINGS; i++) {
+            student_average += current->ratings[i];
+        }
+        student_average /= MAX_RATINGS;
+
+        // If the student's average is below the group average, delete them
+        if (student_average < group_average) {
             Student* toDelete = current;
             if (prev == NULL) {
-                *head = current->next;
+                *head = current->next;  // Removing the first node
             }
             else {
-                prev->next = current->next;
+                prev->next = current->next;  // Removing a node in the middle or end
             }
             current = current->next;
             free(toDelete);
@@ -173,23 +169,66 @@ void deleteBelowAverage(Student** head) {
     }
 }
 
-float calculateGroupAverage(Student* head) {
-    if (head == NULL) return 0.0;
-    float sum = 0.0;
-    int count = 0;
-    Student* current = head;
-    while (current) {
-        sum += current->average_rating;
-        count++;
-        current = current->next;
+
+
+// Helper function to calculate the average rating of a student
+float calculateStudentAverage(Student* student) {
+    float student_average = 0.0;
+    for (int i = 0; i < MAX_RATINGS; i++) {
+        student_average += student->ratings[i];
     }
-    return count > 0 ? sum / count : 0.0;
+
+    float result = student_average / 5.0;
+    return result;
 }
 
+void findTopTwoStudents(Student* head) {
+    if (head == NULL || head->next == NULL) {
+        printf("Недостатньо даних для визначення топ-2 студентів.\n");
+        return;
+    }
+
+    Student* first = NULL;
+    Student* second = NULL;
+
+    Student* current = head;
+    while (current != NULL) {
+        // Calculate the student's average rating from the ratings array
+        float student_average = 0.0;
+        for (int i = 0; i < MAX_RATINGS; i++) {
+            student_average += current->ratings[i];
+        }
+        student_average /= MAX_RATINGS;
+
+        // Determine if this student should be in the top two
+        if (first == NULL || student_average > (first != NULL ? calculateStudentAverage(first) : 0.0)) {
+            second = first;
+            first = current;
+        }
+        else if (second == NULL || student_average > (second != NULL ? calculateStudentAverage(second) : 0.0)) {
+            second = current;
+        }
+
+        current = current->next;
+    }
+
+    // Output the top two students
+    if (first != NULL && second != NULL) {
+        printf("\nДва студенти з найвищим середнім балом:\n");
+
+        float first_avg = calculateStudentAverage(first);
+        float second_avg = calculateStudentAverage(second);
+
+        printf("1. %s %s (Середній бал: %f)\n", first->surname, first->name, first_avg);
+        printf("2. %s %s (Середній бал: %f)\n", second->surname, second->name, second_avg);
+    }
+}
+
+// Функція для додавання нового студента
 void addNewStudent(Student** head) {
     Student* newStudent = (Student*)malloc(sizeof(Student));
     char surname[30], name[30];
-    float average_rating;
+    float ratings[MAX_RATINGS];
     char birthdate[15];
 
     printf("Додати нового студента:\n");
@@ -197,25 +236,47 @@ void addNewStudent(Student** head) {
     gets(surname);
     printf("Введіть ім'я: ");
     gets(name);
-    printf("Введіть дату народженнґ: ");
+    printf("Введіть дату народження: ");
     gets(birthdate);
-    printf("Введіть оцінку): ");
-    scanf("%f", &average_rating);
 
-   
+    printf("Введіть 5 оцінок:\n");
+    for (int i = 0; i < MAX_RATINGS; i++) {
+        printf("Оцінка %d: ", i + 1);
+        scanf("%f", &ratings[i]);
+    }
 
     // Додавання нового студента до відсортованого списку
-    Student* ptr = *head;
-    while (ptr->next != NULL) {
-        ptr = ptr->next;
-    }
-    ptr->next = newStudent;
-    strcpy(newStudent->surname, surname);
-    strcpy(newStudent->name, name);
-    strcpy(newStudent->birthdate, birthdate);
-    newStudent->average_rating = average_rating;
-    newStudent->next = NULL;
-
+    addStudent(head, surname, name, birthdate, ratings);
 }
 
+void printMenu() {
+    printf("\nМеню:\n");
+    printf("1. Додати нового студента\n");
+    printf("2. Вивести список студентів\n");
+    printf("3. Відсортувати студентів за прізвищем\n");
+    printf("4. Видалити студентів з середнім балом нижче середнього\n");
+    printf("5. Знайти двох студентів з найвищими балами\n");
+    printf("6. Завантажити студентів із файлу\n");
+    printf("7. Завантажити студентів в файл\n");
+    printf("0. Вийти\n");
+    printf("Ваш вибір: ");
+}
 
+void writeStudentsInFile(const char* filename, Student *head) {
+    FILE* file = fopen(filename, "w");
+
+    if (!file) {
+        printf("Не вдалося відкрити файл!\n");
+        exit(1);
+    }
+
+    
+    Student* curr = head;
+    while (curr != NULL) {
+        fprintf(file, "%s, %s, %s, %f %f %f %f %f\n", curr->surname, curr->name, curr->birthdate, curr->ratings[0], curr->ratings[1], curr->ratings[2], curr->ratings[3], curr->ratings[4]);
+        curr = curr->next;
+    }
+
+    fclose(file);
+    
+}
